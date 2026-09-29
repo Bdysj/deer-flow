@@ -209,7 +209,9 @@ def find_grep_matches(
                 for line_number, line in enumerate(handle, start=1):
                     if len(line) > _max_line_chars:
                         continue
-                    if regex.search(line):
+                    # Match without the line terminator, like grep does: a
+                    # trailing "\n" would satisfy [^;]$ or \s$ on every line.
+                    if regex.search(line.rstrip("\n")):
                         matches.append(
                             GrepMatch(
                                 path=str(file_path),
