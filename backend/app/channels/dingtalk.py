@@ -137,8 +137,16 @@ def _adapt_markdown_for_dingtalk(text: str) -> str:
         quoted_lines = "\n".join(f"> {line}" for line in code.split("\n"))
         return f"{prefix}{quoted_lines}\n"
 
-    text = _FENCED_CODE_BLOCK_RE.sub(_code_block_to_quote, text)
-    text = _INLINE_CODE_RE.sub(r"**\1**", text)
+    # Rewrite inline code only outside fenced blocks: backticks inside a block
+    # (shell substitution, JS template literals) are code and must stay as-is.
+    parts: list[str] = []
+    last_end = 0
+    for match in _FENCED_CODE_BLOCK_RE.finditer(text):
+        parts.append(_INLINE_CODE_RE.sub(r"**\1**", text[last_end : match.start()]))
+        parts.append(_code_block_to_quote(match))
+        last_end = match.end()
+    parts.append(_INLINE_CODE_RE.sub(r"**\1**", text[last_end:]))
+    text = "".join(parts)
     text = _convert_markdown_table(text)
     text = _HORIZONTAL_RULE_RE.sub("───────────", text)
     return text

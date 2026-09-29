@@ -1168,6 +1168,18 @@ class TestAdaptMarkdownForDingtalk:
         result = _adapt_markdown_for_dingtalk(text)
         assert result == "Use **pip install** to install"
 
+    def test_backticks_inside_fenced_code_block_are_kept(self):
+        # Shell command substitution and JS template literals are code, not
+        # inline-code spans; the inline pass used to turn them into bold.
+        text = "```bash\necho `date`\n```\n```js\nconst s = `hi ${x}`;\n```"
+        result = _adapt_markdown_for_dingtalk(text)
+        assert result == "> **bash**\n> echo `date`\n\n> **js**\n> const s = `hi ${x}`;\n"
+
+    def test_inline_code_around_a_fenced_block_is_still_bold(self):
+        text = "run `ls` then\n```\nx = `y`\n```\nand `pwd`"
+        result = _adapt_markdown_for_dingtalk(text)
+        assert result == "run **ls** then\n> x = `y`\n\nand **pwd**"
+
     def test_horizontal_rule_to_unicode(self):
         text = "Above\n---\nBelow"
         result = _adapt_markdown_for_dingtalk(text)
