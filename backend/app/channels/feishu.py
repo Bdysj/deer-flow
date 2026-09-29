@@ -1106,9 +1106,15 @@ class FeishuChannel(Channel):
             elif "content" in content and isinstance(content["content"], list):
                 # Handle rich-text messages with a top-level "content" list (e.g., topic groups/posts)
                 text_paragraphs: list[str] = []
+                title = content.get("title")
+                if isinstance(title, str) and title.strip():
+                    text_paragraphs.append(title.strip())
                 for paragraph in content["content"]:
                     if isinstance(paragraph, list):
                         paragraph_text_parts: list[str] = []
+                        # Indexes of parts that are fenced code blocks; these
+                        # need their own lines instead of a space separator.
+                        block_parts: set[int] = set()
                         for element in paragraph:
                             if isinstance(element, dict):
                                 # Include both normal text and @ mentions
@@ -1116,6 +1122,21 @@ class FeishuChannel(Channel):
                                     text_value = element.get("text", "")
                                     if text_value:
                                         paragraph_text_parts.append(text_value)
+                                elif element.get("tag") == "a":
+                                    link_text = element.get("text") or ""
+                                    href = element.get("href") or ""
+                                    if isinstance(link_text, str) and isinstance(href, str):
+                                        if href and link_text and link_text != href:
+                                            paragraph_text_parts.append(f"[{link_text}]({href})")
+                                        elif href or link_text:
+                                            paragraph_text_parts.append(href or link_text)
+                                elif element.get("tag") == "code_block":
+                                    code = element.get("text") or ""
+                                    language = element.get("language") or ""
+                                    if isinstance(code, str) and code.strip() and isinstance(language, str):
+                                        code = code.rstrip("\n")
+                                        block_parts.add(len(paragraph_text_parts))
+                                        paragraph_text_parts.append(f"```{language.lower()}\n{code}\n```")
                                 elif element.get("tag") == "img":
                                     image_key = element.get("image_key")
                                     if isinstance(image_key, str) and image_key:
@@ -1127,8 +1148,13 @@ class FeishuChannel(Channel):
                                         files_list.append({"file_key": file_key})
                                         paragraph_text_parts.append("[file]")
                         if paragraph_text_parts:
-                            # Join text segments within a paragraph with spaces to avoid "helloworld"
-                            text_paragraphs.append(" ".join(paragraph_text_parts))
+                            # Join text segments within a paragraph with spaces to avoid "helloworld";
+                            # a code block sits on its own lines so its fences stay valid.
+                            paragraph_text = paragraph_text_parts[0]
+                            for index in range(1, len(paragraph_text_parts)):
+                                separator = "\n" if index in block_parts or index - 1 in block_parts else " "
+                                paragraph_text += separator + paragraph_text_parts[index]
+                            text_paragraphs.append(paragraph_text)
 
                 # Join paragraphs with blank lines to preserve paragraph boundaries
                 text = "\n\n".join(text_paragraphs)

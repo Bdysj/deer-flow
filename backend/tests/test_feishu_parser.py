@@ -213,6 +213,67 @@ def test_feishu_on_message_rich_text():
         assert "\n\n" in parsed_text
 
 
+def _parse_post(content_dict: dict) -> str:
+    channel = FeishuChannel(MessageBus(), {"app_id": "test", "app_secret": "test"})
+    event = MagicMock()
+    event.event.message.chat_id = "chat_1"
+    event.event.message.message_id = "msg_1"
+    event.event.message.root_id = None
+    event.event.sender.sender_id.open_id = "user_1"
+    event.event.message.content = json.dumps(content_dict)
+
+    with pytest.MonkeyPatch.context() as m:
+        mock_make_inbound = MagicMock()
+        m.setattr(channel, "_make_inbound", mock_make_inbound)
+        channel._on_message(event)
+
+    mock_make_inbound.assert_called_once()
+    return mock_make_inbound.call_args[1]["text"]
+
+
+def test_feishu_rich_text_keeps_links():
+    # A hyperlink in a post is an "a" element; its text and URL were dropped.
+    text = _parse_post(
+        {
+            "content": [
+                [
+                    {"tag": "text", "text": "Please review"},
+                    {"tag": "a", "text": "this PR", "href": "https://github.com/org/repo/pull/1"},
+                ],
+                [{"tag": "a", "text": "", "href": "https://example.com/bare"}],
+            ]
+        }
+    )
+
+    assert text == "Please review [this PR](https://github.com/org/repo/pull/1)\n\nhttps://example.com/bare"
+
+
+def test_feishu_rich_text_keeps_code_blocks():
+    # A pasted code block is a "code_block" element; the whole block was dropped.
+    text = _parse_post(
+        {
+            "content": [
+                [{"tag": "text", "text": "It fails with:"}],
+                [{"tag": "code_block", "language": "PYTHON", "text": "def f():\n    return 1/0\n"}],
+            ]
+        }
+    )
+
+    assert text == "It fails with:\n\n```python\ndef f():\n    return 1/0\n```"
+
+
+def test_feishu_rich_text_code_block_is_fenced_on_its_own_lines():
+    text = _parse_post({"content": [[{"tag": "text", "text": "see"}, {"tag": "code_block", "language": "", "text": "x = 1"}, {"tag": "text", "text": "above"}]]})
+
+    assert text == "see\n```\nx = 1\n```\nabove"
+
+
+def test_feishu_rich_text_keeps_the_title():
+    text = _parse_post({"title": "Bug report", "content": [[{"tag": "text", "text": "Body."}]]})
+
+    assert text == "Bug report\n\nBody."
+
+
 def test_feishu_receive_file_replaces_placeholders_in_order():
     async def go():
         bus = MessageBus()
